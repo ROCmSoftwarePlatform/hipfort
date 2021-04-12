@@ -4,13 +4,13 @@ CMAKE_MINIMUM_REQUIRED(VERSION 3.0.2)
 set(HIPFORT_COMPILER "/usr/bin/gfortran" CACHE STRING "Fortran Compiler to build HIPFORT")
 set(HIPFORT_AR "/usr/bin/gcc-ar" CACHE STRING "Static archive command")
 set(HIPFORT_RANLIB "/usr/bin/gcc-ranlib" CACHE STRING "ranlib used to create Static archive")
-set(HIPFORT_COMPILER_FLAGS "-std=f2003 -ffree-form -cpp -ffree-line-length-none" CACHE STRING "Compiler flags to build HIPFORT")
+set(HIPFORT_COMPILER_FLAGS "-ffree-form -cpp -ffree-line-length-none -fmax-errors=5" CACHE STRING "Compiler flags to build HIPFORT")
 set(HIPFORT_BUILD_TYPE "RELEASE"  CACHE STRING "Set to RELEASE TESTING or DEBUG")
 
 #  The ROCm release manager and other integrators should build hipfort as follows:
 #     cmake -DHIPFORT_INSTALL_DIR=/opt/rocm-<release>/hipfort -DHIPFORT_VERSION=<release> <githubrepo>
 
-set(HIPFORT_VERSION "0.2-0"  CACHE STRING "Version of HIPFORT to build")
+set(HIPFORT_VERSION "0.3-0"  CACHE STRING "Version of HIPFORT to build")
 set(HIPFORT_INSTALL_DIR  "/usr/local/hipfort-${HIPFORT_VERSION}" CACHE STRING "Install directory for hipfort")
 IF(CMAKE_INSTALL_PREFIX)
   # Make HIPFORT_INSTALL_DIR be the same as CmAKE_INSTALL_PREFIX
@@ -43,22 +43,69 @@ message("-- CMAKE_INSTALL_PREFIX:${CMAKE_INSTALL_PREFIX}")
 INCLUDE(FortranCInterface)
 FortranCInterface_VERIFY()
 IF(NOT FortranCInterface_VERIFIED_C)
-	MESSAGE(FATAL_ERROR "Fortran compiler must support C Interface")
+  MESSAGE(FATAL_ERROR "Fortran compiler must support C Interface")
 ENDIF(NOT FortranCInterface_VERIFIED_C)
 	
 IF(NOT CMAKE_Fortran_COMPILER_SUPPORTS_F90)
-    MESSAGE(FATAL_ERROR "Fortran compiler does not support F90")
+  MESSAGE(FATAL_ERROR "Fortran compiler does not support F90")
 ENDIF(NOT CMAKE_Fortran_COMPILER_SUPPORTS_F90)
+
+# Test for Fortran 08 support by using an f08-specific construct.
+IF(NOT DEFINED CMAKE_Fortran_COMPILER_SUPPORTS_F08)
+  MESSAGE(CHECK_START "Checking whether ${CMAKE_Fortran_COMPILER} supports Fortran 08")
+  FILE(WRITE ${CMAKE_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/CMakeTmp/testFortranCompilerF08.f90 "
+    module mod
+      interface foo
+        module procedure :: foo_a,foo_b
+      end interface
+    contains
+      subroutine foo_a(a)
+        integer,target,dimension(:) :: a
+      end
+      subroutine foo_b(b)
+        integer,pointer,dimension(:,:) :: b
+      end
+    end
+    PROGRAM TESTFortran08
+      use mod
+      implicit none
+      integer :: a(5)
+      integer,allocatable :: b(:)
+      allocate(b,mold=a)
+      deallocate(b)
+    END PROGRAM TESTFortran08
+")
+  TRY_COMPILE(CMAKE_Fortran_COMPILER_SUPPORTS_F08 ${CMAKE_BINARY_DIR}
+    ${CMAKE_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/CMakeTmp/testFortranCompilerF08.f90
+    OUTPUT_VARIABLE OUTPUT)
+  IF(CMAKE_Fortran_COMPILER_SUPPORTS_F08)
+    MESSAGE(CHECK_PASS "yes")
+    file(APPEND ${CMAKE_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/CMakeOutput.log
+      "Determining if the Fortran compiler supports Fortran 08 passed with "
+      "the following output:\n${OUTPUT}\n\n")
+    set(CMAKE_Fortran_COMPILER_SUPPORTS_F08 1)
+  ELSE(CMAKE_Fortran_COMPILER_SUPPORTS_F08)
+    MESSAGE(CHECK_FAIL "no")
+    file(APPEND ${CMAKE_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/CMakeError.log
+      "Determining if the Fortran compiler supports Fortran 08 failed with "
+      "the following output:\n${OUTPUT}\n\n")
+    set(CMAKE_Fortran_COMPILER_SUPPORTS_F08 0)
+  ENDIF(CMAKE_Fortran_COMPILER_SUPPORTS_F08)
+  unset(CMAKE_Fortran_COMPILER_SUPPORTS_F08 CACHE)
+ENDIF(NOT DEFINED CMAKE_Fortran_COMPILER_SUPPORTS_F08)
 
 #OPTION(USE_MPI "Use the MPI library for parallelization" OFF)
 #OPTION(USE_OPENMP "Use OpenMP for parallelization" OFF)
 
-# Allow long lines:
-set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} ${HIPFORT_COMPILER_FLAGS}")
+IF(CMAKE_Fortran_COMPILER_SUPPORTS_F08)
+  set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} ${HIPFORT_COMPILER_FLAGS} -std=f2008")
+ELSE(CMAKE_Fortran_COMPILER_SUPPORTS_F08)
+  set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} ${HIPFORT_COMPILER_FLAGS} -std=f2003")
+ENDIF(CMAKE_Fortran_COMPILER_SUPPORTS_F08)
   
 # Set compile flags for DEBUG, # RELEASE, or TESTING.  
 INCLUDE(${CMAKE_MODULE_PATH}/SetFortranFlags.cmake) 
-message("-- Done seFortranFlags")
+message("-- Done setting FortranFlags")
 
 # There is an error in CMAKE with this flag for pgf90.  Unset it
 GET_FILENAME_COMPONENT(FCNAME ${CMAKE_Fortran_COMPILER} NAME)
@@ -81,11 +128,13 @@ if(NOT CPACK_PACKAGING_INSTALL_PREFIX)
 endif()
 
 set(CPACK_RPM_EXCLUDE_FROM_AUTO_FILELIST_ADDITION "\${CPACK_PACKAGING_INSTALL_PREFIX}" "\${CPACK_PACKAGING_INSTALL_PREFIX}/include" )
+# Prevent rpmbuild from stripping binaries, which caused issues on CentOS
+set(CPACK_RPM_SPEC_INSTALL_POST "/bin/true")
 
 rocm_create_package(
   NAME hipfort
-  DESCRIPTION "Radeon Open Compute Parallel Primitives Library"
-  MAINTAINER "hipfort Maintainer <hipfort-maintainer@amd.com>"
+  DESCRIPTION "hipfort: Fortran Interface For GPU Kernel Libraries"
+  MAINTAINER "Gregory Rogers <Gregory.Rodgers@amd.com>"
 )
 
 message("-- HIPFORT -------------  cmake DONE --------------------")

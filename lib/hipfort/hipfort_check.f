@@ -423,6 +423,7 @@ contains
   end subroutine rocsparseCheck
   
   subroutine rocsolverCheck(rocsolverError_t)
+    use hipfort_rocblas_enums
     use hipfort_rocsolver_enums
 
     implicit none

@@ -4,7 +4,7 @@
 #
 PROGVERSION=X.Y-Z
 
-# Copyright (c) 2020 Advanced Micro Devices, Inc. All rights reserved.
+# Copyright (c) 2021 Advanced Micro Devices, Inc. All rights reserved.
 # [MITx11 License]
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -28,8 +28,8 @@ PROGVERSION=X.Y-Z
 function usage(){
 /bin/cat 2>&1 <<"EOF" 
 
-   hipfc: Wrapper to call fortran compiler with hipfort
-          This script also call hipcc for non fortran files.
+   hipfc: Wrapper to call Fortran compiler with hipfort
+          This script also calls hipcc for non Fortran files.
 
    Usage:  hipfc [ options ] input-files
 
@@ -42,35 +42,44 @@ function usage(){
     -h          Print this help message
     -k          Keep temporary files
     -c          Compile to object code only
+    -lrocsolver Link to rocsolver library
     -lrocsparse Link to rocsparse library
     -lrocblas   Link to rocblas library
     -lrocfft    Link to rocfft library
+    -lrocrand   Link to rocrand library
     -lhipblas   Link to hipblas library
+    -lhiprand   Link to hiprand library
+    -lcusolver  Link to cusolver library
+    -lcusparse  Link to cusparse library
+    -lcublas    Link to cublas library
+    -lcufft     Link to cufft library
+    -lcurand    Link to curand library
 
    Options with values:       Defaults  
     -hipfort-compiler <bin>   $HIPFORT_COMPILER or gfortran
     -hipfort          <path>  $HIPFORT   or _HIPFORT_INSTALL_DIR_
-    -cuda-path        <path>  $CUDA_PATH or /usr/local/cuda
-    -rocm-dir         <path>  $ROCM_DIR  or /opt/rocm
+    -cuda-path         <path> $CUDA_PATH or /usr/local/cuda
+    -rocm-path         <path>  $ROCM_PATH  or /opt/rocm
     -I         <include dir>  Provide one directory per -I option
     -O         <LLVM opt>     LLVM optimization level
     -o         <outfilename>  Default=a.out
     -t         <tdir>         Temporary directory for intermediate files
                               Default=/tmp/hipfc-tmp-$$
-    --offload-arch <gputype>  Default=<value returned by mygpu utility>
+    --offload-arch=<gputype>  Default=<value returned by mygpu utility>
 
    Examples:
     hipfc myapp.f -o myapp             /* Compile FORTRAN to create myapp  */
     hipfc myapp.f -o myapp -lrocblas   /* Compile FORTRAN with rocblas     */
     hipfc myapp.f kernels.cpp -o myapp /* Compile FORTRAN and c++ and link */
+    hipfc --offload-arch=sm_70 myapp.f -o myapp /* Compile for NVPTX target */
 
    Instead of these command line options:
-        -hipfort, -cuda-path, -hipfort-compiler -rocm-dir
+        -hipfort, -cuda-path, -hipfort-compiler -rocm-path
       you may alternatively set these environment variables, respectively:
-        HIPFORT,  CUDA_PATH,  HIPFORT_COMPILER, ROCM_DIR
+        HIPFORT,  CUDA_PATH,  HIPFORT_COMPILER, ROCM_PATH
       Command line options take precedence over environment variables. 
 
-   Copyright (c) 2020 ADVANCED MICRO DEVICES, INC.
+   Copyright (c) 2021 ADVANCED MICRO DEVICES, INC.
 
 EOF
    exit 0 
@@ -136,10 +145,33 @@ function getdname(){
    echo $__DIRN
 }
 
+function addrocmlib(){
+  name=$1
+  if [ ! -d $ROCM_PATH/$name/lib ] ; then 
+     echo "ERROR:  Directory $ROCM_PATH/$name/lib does not exist"
+     echo "        Please install $name"
+     exit $DEADRC
+  fi
+  LINKOPTS="$LINKOPTS -L$ROCM_PATH/$name/lib -l$name"
+}
+
+function addcudalib(){
+  name=$1
+  libdir=$CUDA_PATH/targets/x86_64-linux/lib
+  if [ ! -d $libdir ] ; then 
+     echo "ERROR:  Directory $libdir does not exist"
+     echo "        Please install CUDA"
+     exit $DEADRC
+  fi
+  LINKOPTS="$LINKOPTS -L$libdir -l$name"
+}
+
 #  --------  The main code starts here -----
 INCLUDES=""
 PASSTHRUARGS=""
 INPUTFILES=""
+ROCM_LIBS=""
+CUDA_LIBS=""
 #  Argument processing
 while [ $# -gt 0 ] ; do 
    case "$1" in 
@@ -159,14 +191,21 @@ while [ $# -gt 0 ] ; do
       -O0) 		FORTOPT=0 ;; 
       -o) 		OUTFILE=$2; shift ;; 
       -t)		TMPDIR=$2; shift ;; 
-      -lrocsparse)      ROCSPARSE=true ; PASSTHRUARGS+=" $1" ;;
-      -lrocblas)        ROCBLAS=true ; PASSTHRUARGS+=" $1" ;;
-      -lrocfft)         ROCFFT=true ; PASSTHRUARGS+=" $1" ;;
-      -lhipblas)        HIPBLAS=true ; PASSTHRUARGS+=" $1" ;;
-      --offload-arch)   HIPFORT_GPU=$2; shift ;;
+      -lrocsolver)      ROCM_LIBS+=" rocsolver" ;;
+      -lrocsparse)      ROCM_LIBS+=" rocsparse" ;;
+      -lrocblas)        ROCM_LIBS+=" rocblas" ;;
+      -lrocfft)         ROCM_LIBS+=" rocfft" ;;
+      -lhipsparse)      ROCM_LIBS+=" hipsparse" ;;
+      -lhipblas)        ROCM_LIBS+=" hipblas" ;;
+      -lhiprand)        ROCM_LIBS+=" hiprand" ;;
+      -lcusolver)       CUDA_LIBS+=" cusolver" ;;
+      -lcusparse)       CUDA_LIBS+=" cusparse" ;;
+      -lcufft)          CUDA_LIBS+=" cufft" ;;
+      -lcublas)         CUDA_LIBS+=" cublas" ;;
+      -lcurand)         CUDA_LIBS+=" curand" ;;
       -triple)          TARGET_TRIPLE=$2; shift ;;
-      -cuda-path)       CUDA_PATH=$2; shift ;;
-      -rocm-dir)        ROCM_DIR=$2; shift ;;
+      -cuda-path)        CUDA_PATH=$2; shift ;;
+      -rocm-path)        ROCM_PATH=$2; shift ;;
       -hipfort)         HIPFORT=$2; shift ;;
       -hipfort-compiler) HIPFORT_COMPILER=$2; shift ;;
       -h) 	        usage ;;
@@ -178,12 +217,16 @@ while [ $# -gt 0 ] ; do
       -vv) 		VV=true;;
       --) 		shift ;;
       *)
-        dash=${1:0:1}
-	if [ $dash == "-" ] ; then
-	   PASSTHRUARGS+=" $1"
+   	if [[ $1 == --offload-arch=* ]]; then
+   	   HIPFORT_GPU=${1/--offload-arch=/};
         else
-	   INPUTFILES+=" $1"
-        fi
+	   dash=${1:0:1}
+	   if [ $dash == "-" ] ; then
+	      PASSTHRUARGS+=" $1"
+           else
+	      INPUTFILES+=" $1"
+           fi
+   	fi
    esac
    shift
 done
@@ -209,11 +252,12 @@ cdir=$(getdname $0)
 HOW_CALLED=${0##*/}
 
 CUDA_PATH=${CUDA_PATH:-/usr/local/cuda}
-ROCM_DIR=${ROCM_DIR:-/opt/rocm}
+ROCM_PATH=${ROCM_PATH:-/opt/rocm}
+HIP_PLATFORM=${HIP_PLATFORM:-amd}
 
 HIPFORT=${HIPFORT:-_HIPFORT_INSTALL_DIR_}
 if [ ! -d $HIPFORT ] ; then
-   HIPFORT="$ROCM_DIR/hipfort"
+   HIPFORT="$ROCM_PATH/hipfort"
 fi
 if [ ! -d $HIPFORT ] ; then
    HIPFORT="/tmp/hipfort"
@@ -243,11 +287,11 @@ if [ ! $HIPFORT_GPU ] ; then
    fi
 fi
 
-# Future versions of ROCm will install the device library in ROCM_DIR/amdgcn/bitcode
-if [ -d $ROCM_DIR/amdgcn/bitcode ] ; then
-    DEVICE_LIB_PATH=$ROCM_DIR/amdgcn/bitcode
+# Future versions of ROCm will install the device library in ROCM_PATH/amdgcn/bitcode
+if [ -d $ROCM_PATH/amdgcn/bitcode ] ; then
+    DEVICE_LIB_PATH=$ROCM_PATH/amdgcn/bitcode
 else
-    DEVICE_LIB_PATH=$ROCM_DIR/lib
+    DEVICE_LIB_PATH=$ROCM_PATH/lib
 fi
 
 #  Handle all differences between amdgcn and nvidia here
@@ -255,16 +299,16 @@ if [ "${HIPFORT_GPU:0:3}" == "sm_" ] ; then
    TARGET_ARCH="nvptx"
    TARGET_TRIPLE=${TARGET_TRIPLE:-nvptx64-nvidia-cuda}
    TARGET_LIBS="-L$CUDA_PATH/targets/x86_64-linux/lib -lcudart"
-   HIPCC_ENV="HIP_PLATFORM=nvcc"
-   HIPCC_OPTS="--gpu-architecture=$HIPFORT_GPU"
+   HIPCC_ENV="HIP_PLATFORM=nvidia"
+   HIPCC_OPTS="--gpu-architecture=$HIPFORT_GPU -x cu $CUOPTS"
    # fixme: add test for minimum cuda version here
 else 
-   if [ ! -f $ROCM_DIR/bin/hipconfig ] ; then
-      echo "ERROR: hipconfig not found at $ROCM_DIR/bin/hipconfig"
+   if [ ! -f $ROCM_PATH/bin/hipconfig ] ; then
+      echo "ERROR: hipconfig not found at $ROCM_PATH/bin/hipconfig"
       echo "       Please install ROCm hip"
       exit 1
    fi
-   hipversion=`$ROCM_DIR/bin/hipconfig -v`
+   hipversion=`$ROCM_PATH/bin/hipconfig -v`
    hipver=`echo $hipversion | cut -d"." -f1`
    hiprel=`echo $hipversion | cut -d"." -f2`
    if [ $hipver -lt 3 ] || ( [ $hipver == 3 ] && [ $hiprel -lt 5 ] ) ; then
@@ -274,8 +318,8 @@ else
    fi
    TARGET_TRIPLE=${TARGET_TRIPLE:-amdgcn-amd-amdhsa}
    TARGET_ARCH="amdgcn"
-   TARGET_LIBS="-L$ROCM_DIR/lib -lamdhip64 -Wl,-rpath=$ROCM_DIR/lib "
-   HIPCC_ENV="HIP_PLATFORM=hcc DEVICE_LIB_PATH=$DEVICE_LIB_PATH HIP_CLANG_PATH=$ROCM_DIR/llvm/bin"
+   TARGET_LIBS="-L$ROCM_PATH/lib -lamdhip64 -Wl,-rpath=$ROCM_PATH/lib "
+   HIPCC_ENV="HIP_PLATFORM=$HIP_PLATFORM DEVICE_LIB_PATH=$DEVICE_LIB_PATH HIP_CLANG_PATH=$ROCM_PATH/llvm/bin"
    HIPCC_OPTS="-fno-gpu-rdc -fPIC --offload-arch=$HIPFORT_GPU"
 fi
 
@@ -350,40 +394,14 @@ if [ $GEN_OBJECT_ONLY ]  ; then
    HIPCC_OPTS=" -c $HIPCC_OPTS"
    LINKOPTS=""
 else
-   LINKOPTS="$TARGET_LIBS -lstdc++ -L$HIPFORT/lib -lhipfort-$TARGET_ARCH"
-
-   if [ $ROCSPARSE ] ; then 
-     if [ ! -d $ROCM_DIR/rocsparse/lib ] ; then 
-        echo "ERROR:  Directory $ROCM_DIR/rocsparse/lib does not exist"
-        echo "        Please install rocsparse"
-        exit $DEADRC
-     fi
-     LINKOPTS="$LINKOPTS -L$ROCM_DIR/rocsparse/lib -lrocsparse"
-   fi
-   if [ $ROCBLAS ] ; then 
-     if [ ! -d $ROCM_DIR/rocblas/lib ] ; then 
-        echo "ERROR:  Directory $ROCM_DIR/rocblas/lib does not exist"
-        echo "        Please install rocblas"
-        exit $DEADRC
-     fi
-     LINKOPTS="$LINKOPTS -L$ROCM_DIR/rocblas/lib -lrocblas"
-   fi
-   if [ $HIPBLAS ] ; then 
-     if [ ! -d $ROCM_DIR/hipblas/lib ] ; then 
-        echo "ERROR:  Directory $ROCM_DIR/hipblas/lib does not exist"
-        echo "        Please install hipblas"
-        exit $DEADRC
-     fi
-     LINKOPTS="$LINKOPTS -L$ROCM_DIR/hipblas/lib -lhipblas"
-   fi
-   if [ $ROCFFT ] ; then 
-     if [ ! -d $ROCM_DIR/rocfft/lib ] ; then 
-        echo "ERROR:  Directory $ROCM_DIR/rocfft/lib does not exist"
-        echo "        Please install rocfft"
-        exit $DEADRC
-     fi
-     LINKOPTS="$LINKOPTS -L$ROCM_DIR/rocfft/lib -lrocfft"
-   fi
+   LINKOPTS="-L$HIPFORT/lib -lhipfort-$TARGET_ARCH"
+   for lib in $ROCM_LIBS; do
+     addrocmlib $lib
+   done
+   for lib in $CUDA_LIBS; do
+     addcudalib $lib
+   done
+   LINKOPTS="$LINKOPTS $TARGET_LIBS -lstdc++"
 fi
 
 # Separate hipcc inputs from fortran inputs
@@ -421,7 +439,7 @@ if [ $VV ] ; then
    echo "#Info:  HIPFORT Version:	$PROGVERSION" 
    echo "#Info:  HIPFORT Compiler:	$HIPFORT_COMPILER"
    echo "#Info:  HIPFORT Path:		$HIPFORT"
-   echo "#Info:  ROCM Path:		$ROCM_DIR"
+   echo "#Info:  ROCM Path:		$ROCM_PATH"
    echo "#Info:  CUDA Path:		$CUDA_PATH"
    echo "#Info:  How called:		$HOW_CALLED"
    echo "#Info:  Target GPU:		$HIPFORT_GPU"
@@ -444,14 +462,14 @@ if [ "$__HIPCC_INPUTS" != "" ] ; then
       __HIPCC_OUTFILE="$TMPDIR/hipcc.o"
       __INPUTS+=" $__HIPCC_OUTFILE"
    fi
-   if [ ! -f $ROCM_DIR/bin/hipcc ] ; then
-      echo "ERROR:  hipcc compiler not found at $ROCM_DIR/bin/hipcc"
+   if [ ! -f $ROCM_PATH/bin/hipcc ] ; then
+      echo "ERROR:  hipcc compiler not found at $ROCM_PATH/bin/hipcc"
       echo "        Please install hip"
       exit $DEADRC
    fi
    [ $VERBOSE ] && echo "export $HIPCC_ENV"
    export $HIPCC_ENV
-   runcmd "$ROCM_DIR/bin/hipcc $HIPCC_OPTS $PASSTHRUARGS $__HIPCC_INPUTS $__HIPCC_LINKOPTS -o $__HIPCC_OUTFILE"
+   runcmd "$ROCM_PATH/bin/hipcc $HIPCC_OPTS $PASSTHRUARGS $__HIPCC_INPUTS $__HIPCC_LINKOPTS -o $__HIPCC_OUTFILE"
 fi
 
 if [ "$__INPUTS" != "" ] ; then

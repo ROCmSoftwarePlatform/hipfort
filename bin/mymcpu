@@ -7,7 +7,7 @@
 
 PROGVERSION=X.Y-Z
 
-# Copyright (c) 2020 Advanced Micro Devices, Inc. All rights reserved.
+# Copyright (c) 2021 Advanced Micro Devices, Inc. All rights reserved.
 # [MITx11 License]
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -46,7 +46,7 @@ function usage(){
     -d        If GPU is unknown, return this default device
     -version  Print the version of mymcpu and mygpu
 
-   Copyright (c) 2020 ADVANCED MICRO DEVICES, INC.
+   Copyright (c) 2021 ADVANCED MICRO DEVICES, INC.
 
 EOF
    exit 1 

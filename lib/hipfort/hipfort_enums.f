@@ -2,7 +2,7 @@
 ! ==============================================================================
 ! hipfort: FORTRAN Interfaces for GPU kernels
 ! ==============================================================================
-! Copyright (c) 2020 Advanced Micro Devices, Inc. All rights reserved.
+! Copyright (c) 2021 Advanced Micro Devices, Inc. All rights reserved.
 ! [MITx11 License]
 ! 
 ! Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -157,6 +157,12 @@ module hipfort_enums
     enumerator :: hipDeviceAttributeCooperativeMultiDeviceUnmatchedGridDim
     enumerator :: hipDeviceAttributeCooperativeMultiDeviceUnmatchedBlockDim
     enumerator :: hipDeviceAttributeCooperativeMultiDeviceUnmatchedSharedMem
+    enumerator :: hipDeviceAttributeAsicRevision
+    enumerator :: hipDeviceAttributeManagedMemory
+    enumerator :: hipDeviceAttributeDirectManagedMemAccessFromHost
+    enumerator :: hipDeviceAttributeConcurrentManagedAccess
+    enumerator :: hipDeviceAttributePageableMemoryAccess
+    enumerator :: hipDeviceAttributePageableMemoryAccessUsesHostPageTables
   end enum
 
   enum, bind(c)
@@ -167,7 +173,30 @@ module hipfort_enums
   end enum
 
   enum, bind(c)
+    enumerator :: hipDevP2PAttrPerformanceRank = 0
+    enumerator :: hipDevP2PAttrAccessSupported
+    enumerator :: hipDevP2PAttrNativeAtomicSupported
+    enumerator :: hipDevP2PAttrHipArrayAccessSupported
+  end enum
+
+  enum, bind(c)
     enumerator :: hipLimitMallocHeapSize = 2
+  end enum
+
+  enum, bind(c)
+    enumerator :: hipMemAdviseSetReadMostly = 1
+    enumerator :: hipMemAdviseUnsetReadMostly = 2
+    enumerator :: hipMemAdviseSetPreferredLocation = 3
+    enumerator :: hipMemAdviseUnsetPreferredLocation = 4
+    enumerator :: hipMemAdviseSetAccessedBy = 5
+    enumerator :: hipMemAdviseUnsetAccessedBy = 6
+  end enum
+
+  enum, bind(c)
+    enumerator :: hipMemRangeAttributeReadMostly = 1
+    enumerator :: hipMemRangeAttributePreferredLocation = 2
+    enumerator :: hipMemRangeAttributeAccessedBy = 3
+    enumerator :: hipMemRangeAttributeLastPrefetchLocation = 4
   end enum
 
   enum, bind(c)
@@ -189,6 +218,12 @@ module hipfort_enums
     enumerator :: hipJitOptionSm3xOpt
     enumerator :: hipJitOptionFastCompile
     enumerator :: hipJitOptionNumOptions
+  end enum
+
+  enum, bind(c)
+    enumerator :: hipFuncAttributeMaxDynamicSharedMemorySize = 8
+    enumerator :: hipFuncAttributePreferredSharedMemoryCarveout = 9
+    enumerator :: hipFuncAttributeMax
   end enum
 
   enum, bind(c)
@@ -365,5 +400,8 @@ module hipfort_enums
 
  
 
+#ifdef USE_FPOINTER_INTERFACES
+
   
+#endif
 end module hipfort_enums
